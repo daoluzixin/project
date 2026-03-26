@@ -1,0 +1,36 @@
+server:
+  port: 8101
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+  group-configs:
+    - group: 'default'
+      paths-to-match: '/**'
+      packages-to-scan: org.project.controller
+knife4j:
+  enable: true
+  setting:
+    language: zh-CN
+    enable-swagger-models: true
+    enable-document-manage: true
+    swagger-model-name: 实体类列表
+detection:
+  url: http://localhost:8000  # 检测服务地址
+  connect-timeout: 5000             # 连接超时（毫秒）
+  read-timeout: 60000               # 读取超时（毫秒）
+  max-retries: 3                    # 最大重试次数
+  max-batch-size: 10                # 最大批量大小
+  return-image: true                # 是否返回图像（false返回JSON）
+  cache-enabled: false              # 是否启用缓存
+  cache-expire-seconds: 3600        # 缓存过期时间（秒）
+  max-concurrent: 5                 # 最大并发数
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 25MB           # 单个文件最大大小
+      max-request-size: 50MB        # 总请求最大大小
