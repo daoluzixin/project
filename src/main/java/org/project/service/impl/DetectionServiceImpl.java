@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.project.config.DetectionProperties;
 import org.project.entity.request.DetectionRequest;
 import org.project.entity.response.DetectionResponse;
+import org.project.entity.response.FolderDetectionResponse;
 import org.project.entity.response.HealthCheckResponse;
 import org.project.service.DetectionService;
 import org.springframework.core.io.ByteArrayResource;
@@ -13,8 +14,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -85,6 +91,92 @@ public class DetectionServiceImpl implements DetectionService {
             return DetectionResponse.error(500, "检测失败: " + e.getMessage());
         }
     }
+
+
+
+    /**
+     * 文件夹批量检测
+     */
+    @Override
+    public FolderDetectionResponse detectFolder(List<MultipartFile> rgbFiles,
+                                                List<MultipartFile> irFiles, Float confThres, Float iouThres) {
+        long startTime = System.currentTimeMillis();
+
+        try {
+            // 1. 验证请求参数
+            if (rgbFiles == null || rgbFiles.isEmpty() || irFiles == null || irFiles.isEmpty()) {
+                log.warn("请求参数无效: RGB或红外文件列表为空");
+                return FolderDetectionResponse.error(400, "RGB和红外文件列表都不能为空");
+            }
+
+            // 2. 按文件名匹配RGB和红外图像
+            Map<String, MultipartFile> rgbMap = rgbFiles.stream()
+                    .collect(Collectors.toMap(MultipartFile::getOriginalFilename, f -> f));
+            Map<String, MultipartFile> irMap = irFiles.stream()
+                    .collect(Collectors.toMap(MultipartFile::getOriginalFilename, f -> f));
+
+            // 3. 遍历处理每对图像
+            List<FolderDetectionResponse.SingleResult> results = new ArrayList<>();
+            int successCount = 0;
+            int failedCount = 0;
+
+            for (String fileName : rgbMap.keySet()) {
+                if (irMap.containsKey(fileName)) {
+                    try {
+                        // 构建单张图片的检测请求
+                        DetectionRequest singleRequest = DetectionRequest.builder()
+                                .rgbFile(rgbMap.get(fileName))
+                                .irFile(irMap.get(fileName))
+                                .confThres(confThres)
+                                .iouThres(iouThres)
+                                .build();
+
+                        // 调用单张检测方法
+                        DetectionResponse response = detect(singleRequest);
+
+                        if (response.getCode() == 200) {
+                            results.add(FolderDetectionResponse.SingleResult.builder()
+                                    .fileName(fileName)
+                                    .resultImage(response.getResultImage())
+                                    .inferenceTime(response.getInferenceTime())
+                                    .success(true)
+                                    .build());
+                            successCount++;
+                        } else {
+                            results.add(FolderDetectionResponse.SingleResult.builder()
+                                    .fileName(fileName)
+                                    .success(false)
+                                    .errorMessage(response.getMessage())
+                                    .build());
+                            failedCount++;
+                        }
+                    } catch (Exception e) {
+                        log.error("处理文件失败: {}", fileName, e);
+                        results.add(FolderDetectionResponse.SingleResult.builder()
+                                .fileName(fileName)
+                                .success(false)
+                                .errorMessage(e.getMessage())
+                                .build());
+                        failedCount++;
+                    }
+                } else {
+                    log.warn("未找到匹配的红外图像: {}", fileName);
+                }
+            }
+
+            long totalTime = System.currentTimeMillis() - startTime;
+            log.info("文件夹检测完成 - 总数: {}, 成功: {}, 失败: {}, 耗时: {}ms",
+                    results.size(), successCount, failedCount, totalTime);
+
+            return FolderDetectionResponse.success(results.size(), successCount, failedCount, totalTime, results);
+
+        } catch (Exception e) {
+            log.error("文件夹检测失败", e);
+            return FolderDetectionResponse.error(500, "文件夹检测失败: " + e.getMessage());
+        }
+    }
+
+
 
     /**
      * 健康检查
